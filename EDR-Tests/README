@@ -1,0 +1,26 @@
+# EDR Testing Script
+
+This script is designed to test Endpoint Detection and Response (EDR) solutions by simulating a variety of common attack techniques. It helps security teams evaluate the effectiveness of their EDR products.
+
+## Features
+
+- Simulates multiple attack vectors (e.g., fileless attacks, process injection, persistence techniques)
+- Modular design for easy addition of new tests
+- Generates logs for analysis
+
+## Usage
+
+1. Clone the repository.
+2. Review the script to understand the actions it will perform.
+3. Run the script with appropriate permissions:
+    ```
+    ./runtests.bat
+    ```
+4. Analyze the results and EDR alerts.
+
+**Warning:**  
+This script is for testing in controlled environments only. Do not run on production systems.
+
+## Disclaimer
+
+Use at your own risk. The authors are not responsible for any misuse or damage caused by this script.
