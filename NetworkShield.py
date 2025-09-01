@@ -15,6 +15,8 @@ rst_response_count = defaultdict(int)
 unusual_flag_count = defaultdict(int)
 icmp_request_count = defaultdict(int)
 arp_request_count = defaultdict(int)
+udp_count = defaultdict(int)
+icmp_unreachable_count = defaultdict(int)
 TIME_WINDOW = 10  # seconds
 MAX_ICMP_REQUESTS = 50  # arbitrary threshold
 MAX_ARP_REQUESTS = 100  # arbitrary threshold
@@ -52,25 +54,46 @@ def select_interface(interfaces):
             print("Please enter a valid number.")
 
 def packet_callback(packet):
+    global udp_count, icmp_unreachable_count, syn_count, rst_response_count, unusual_flag_count, icmp_request_count, arp_request_count
     # print(packet.summary())
-    if packet.haslayer(TCP):
+    if packet.haslayer(UDP):
+        src_ip = packet[IP].src
+        udp_count[src_ip] += 1
+        if udp_count[src_ip] > 50:
+            print(f"[!] Potential UDP Scan from {src_ip}")
+            udp_count[src_ip] = 0
+    elif packet.haslayer(TCP):
+        src_ip = packet[IP].src
         tcp_flags = packet[TCP].flags
         if tcp_flags == 2:  # SYN scan
-            print("Possible SYN scan detected.")
+            syn_count[src_ip] += 1
+            if syn_count[src_ip] > 50: # Threshold for SYNs
+                print(f"[!] Possible TCP SYN Scan from {src_ip}")
+                syn_count[src_ip] = 0 # Reset after alert
         elif tcp_flags == 18:  # SYN-ACK
             print("SYN-ACK packet observed.")
-        elif tcp_flags == 1:  # FIN scan
-            print("Possible FIN scan detected.")
         elif tcp_flags == 4:  # RST scan
-            print("Possible RST scan detected.")
-        elif tcp_flags == 0:  # NULL scan
-            print("Possible NULL scan detected.")
-        elif tcp_flags & 32:  # URG scan
-            print("Possible Xmas scan detected.")
+            rst_response_count[src_ip] += 1
+            if rst_response_count[src_ip] > 50: # Many RSTs from same src?
+                print(f"[!] Many RSTs from {src_ip}. Possible response to FIN/XMAS/NULL scan.")
+                rst_response_count[src_ip] = 0
+        elif tcp_flags in ['F', 'P', 'U', 'FPU', '']:
+            unusual_flag_count[src_ip] += 1
+            if unusual_flag_count[src_ip] > 20:
+                print(f"[!] Unusual TCP flags from {src_ip}. Possible FIN/XMAS/NULL scan.")
+                unusual_flag_count[src_ip] = 0
     elif packet.haslayer(ICMP):
         src_ip = packet[IP].src
         icmp_request_count[src_ip] += 1
-        
+        if packet[ICMP].type == 3 and packet[ICMP].code == 3: # Dest Unreachable, Port Unreachable
+            # The original packet that caused the error is embedded inside the ICMP packet
+            original_ip = packet[IP].payload
+            if original_ip.haslayer(IP) and original_ip[IP].src in MY_NETWORK:
+                attacker_ip = original_ip[IP].dst # The original target, now the source of the ICMP error
+                icmp_unreachable_count[attacker_ip] += 1
+                if icmp_unreachable_count[attacker_ip] > 20:
+                    print(f"[!] Many ICMP Port Unreachable messages to {attacker_ip}. Likely UDP scan result.")
+                    icmp_unreachable_count[attacker_ip] = 0
         # Check if this source has exceeded the threshold
         if icmp_request_count[src_ip] > MAX_ICMP_REQUESTS:
             print(f"[!] ICMP Ping Sweep detected from {src_ip}")
